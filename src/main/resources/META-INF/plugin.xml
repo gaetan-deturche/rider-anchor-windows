@@ -31,5 +31,11 @@
                 description="Opens an empty window that tool windows can be docked into.">
             <add-to-group group-id="WindowMenu" anchor="first"/>
         </action>
+        <action id="dev.anchorwindows.ToggleFocusSync"
+                class="dev.anchorwindows.ToggleAnchorFocusSyncAction"
+                text="Anchor Windows Follow Focus"
+                description="Raise anchor windows when the main window gains focus, and vice versa.">
+            <add-to-group group-id="WindowMenu" anchor="after" relative-to-action="dev.anchorwindows.NewAnchorWindow"/>
+        </action>
     </actions>
 </idea-plugin>

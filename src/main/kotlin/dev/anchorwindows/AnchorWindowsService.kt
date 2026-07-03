@@ -6,6 +6,7 @@ import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
+import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.StoragePathMacros
 import com.intellij.openapi.components.service
@@ -25,11 +26,20 @@ import com.intellij.openapi.wm.safeToolWindowPaneId
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.docking.DockManager
 import com.intellij.ui.docking.impl.DockManagerImpl
+import com.sun.jna.Native
+import com.sun.jna.Pointer
+import com.sun.jna.platform.win32.User32
+import com.sun.jna.platform.win32.WinDef
+import java.awt.Frame
 import java.awt.MouseInfo
 import java.awt.Point
 import java.awt.Rectangle
+import java.awt.Window
+import java.awt.event.WindowAdapter
+import java.awt.event.WindowEvent
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.WeakHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.JFrame
 import javax.swing.SwingUtilities
@@ -165,6 +175,7 @@ class AnchorWindowsService(private val project: Project) : PersistentStateCompon
         ensureFactoryRegistered()
         (DockManager.getInstance(project) as DockManagerImpl).createNewDockContainerFor(AnchorDockableContent(), creationPoint())
         retitleAnchorFrames()
+        installFocusSync()
         scheduleSnapshot()
     }
 
@@ -245,6 +256,7 @@ class AnchorWindowsService(private val project: Project) : PersistentStateCompon
         scheduleSizePass()
 
         retitleAnchorFrames()
+        installFocusSync()
         snapshot()
     }
 
@@ -380,6 +392,66 @@ class AnchorWindowsService(private val project: Project) : PersistentStateCompon
         writeWindows(windows)
     }
 
+    // ------------------------------------------------------------------------------------
+    // Focus-group syncing: when enabled, focusing any window of the group (main frame or an
+    // anchor window) raises the others in z-order without activating them, so the group
+    // alt-tabs/clicks back as one unit.
+    // ------------------------------------------------------------------------------------
+
+    private val focusSyncInstalled = WeakHashMap<Window, Boolean>()
+    private var raisingGroup = false
+
+    fun installFocusSync() {
+        for (window in groupWindows()) {
+            if (focusSyncInstalled.put(window, true) == null) {
+                window.addWindowFocusListener(object : WindowAdapter() {
+                    override fun windowGainedFocus(e: WindowEvent) = onGroupWindowFocused(e.window)
+                })
+            }
+        }
+    }
+
+    private fun groupWindows(): List<Window> {
+        val windows = mutableListOf<Window>()
+        WindowManager.getInstance().getFrame(project)?.let { windows.add(it) }
+        for (container in containers.toList()) {
+            SwingUtilities.getWindowAncestor(container.containerComponent)?.let { windows.add(it) }
+        }
+        return windows
+    }
+
+    private fun onGroupWindowFocused(focused: Window) {
+        if (raisingGroup || !isFocusSyncEnabled()) return
+        raisingGroup = true
+        try {
+            val group = groupWindows().filter {
+                it.isShowing && ((it as? Frame)?.extendedState ?: 0) and Frame.ICONIFIED == 0
+            }
+            if (group.size < 2 || focused !in group) return
+            for (window in group) {
+                if (window !== focused) raiseWithoutActivation(window)
+            }
+            raiseWithoutActivation(focused)
+        }
+        finally {
+            raisingGroup = false
+        }
+    }
+
+    private fun raiseWithoutActivation(window: Window) {
+        try {
+            val hwnd = WinDef.HWND(Native.getComponentPointer(window))
+            User32.INSTANCE.SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOSIZE or SWP_NOMOVE or SWP_NOACTIVATE)
+        }
+        catch (e: Throwable) {
+            // Non-Windows or JNA unavailable: best-effort Swing fallback (may briefly flick focus).
+            val previous = window.isAutoRequestFocus
+            window.isAutoRequestFocus = false
+            window.toFront()
+            window.isAutoRequestFocus = previous
+        }
+    }
+
     /** Anchor frames have no editor to derive a title from; give them a recognizable one. */
     private fun retitleAnchorFrames() {
         for (container in containers) {
@@ -403,6 +475,15 @@ class AnchorWindowsService(private val project: Project) : PersistentStateCompon
     }
 
     companion object {
+        const val FOCUS_SYNC_PROPERTY = "dev.anchorwindows.followFocus"
+
+        fun isFocusSyncEnabled(): Boolean = PropertiesComponent.getInstance().getBoolean(FOCUS_SYNC_PROPERTY, false)
+
         fun getInstance(project: Project): AnchorWindowsService = project.service()
     }
 }
+
+private val HWND_TOP = WinDef.HWND(Pointer.createConstant(0L))
+private const val SWP_NOSIZE = 0x0001
+private const val SWP_NOMOVE = 0x0002
+private const val SWP_NOACTIVATE = 0x0010
