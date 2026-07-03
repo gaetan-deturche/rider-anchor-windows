@@ -1,0 +1,35 @@
+<idea-plugin>
+    <id>dev.anchorwindows</id>
+    <name>Anchor Windows</name>
+    <vendor>gaetan</vendor>
+
+    <description><![CDATA[
+        Adds "New Anchor Window": an empty detached IDE frame with a tool window pane,
+        so standard tool windows (Explorer, Build, Debug, ...) can be docked into a
+        secondary window without the dummy-editor-tab workaround. Layout and open anchor
+        windows persist across restarts via the platform's own dock-window state.
+    ]]></description>
+
+    <!-- Frontend/platform only - works in any IntelliJ-based IDE, built against Rider. -->
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionId="com.intellij">
+        <!-- Restore saved anchor windows when the project opens (secondary trigger). -->
+        <postStartupActivity implementation="dev.anchorwindows.AnchorWindowsStartup"/>
+    </extensions>
+
+    <projectListeners>
+        <!-- Primary restore trigger: fires during tool window registration at project open. -->
+        <listener class="dev.anchorwindows.AnchorWindowsInitListener"
+                  topic="com.intellij.openapi.wm.ex.ToolWindowManagerListener"/>
+    </projectListeners>
+
+    <actions>
+        <action id="dev.anchorwindows.NewAnchorWindow"
+                class="dev.anchorwindows.NewAnchorWindowAction"
+                text="New Anchor Window"
+                description="Opens an empty window that tool windows can be docked into.">
+            <add-to-group group-id="WindowMenu" anchor="first"/>
+        </action>
+    </actions>
+</idea-plugin>
