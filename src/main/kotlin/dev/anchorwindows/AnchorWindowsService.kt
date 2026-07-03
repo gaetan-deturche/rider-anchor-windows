@@ -6,10 +6,12 @@ import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
+import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.StoragePathMacros
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.JDOMUtil
 import com.intellij.openapi.project.ProjectCloseListener
 import com.intellij.openapi.wm.ToolWindowAnchor
 import com.intellij.openapi.wm.ToolWindowManager
@@ -26,6 +28,8 @@ import com.intellij.ui.docking.impl.DockManagerImpl
 import java.awt.MouseInfo
 import java.awt.Point
 import java.awt.Rectangle
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.JFrame
 import javax.swing.SwingUtilities
@@ -95,6 +99,49 @@ class AnchorWindowsService(private val project: Project) : PersistentStateCompon
     }
 
     /**
+     * Rider's built-in "tool window layout per application" option
+     * (RiderPerAppSettingsManager.toolWindowsPerApp, an app-level options file). When enabled,
+     * anchor windows follow the same policy: state lives in [AnchorWindowsAppStore] and is
+     * shared by all solutions. Read once per session — the built-in layout sharing itself only
+     * settles on restart too.
+     */
+    private val perApp: Boolean by lazy {
+        try {
+            val file = Path.of(PathManager.getOptionsPath(), "RiderPerAppSettingsManager.xml")
+            if (!Files.exists(file)) return@lazy false
+            val enabled = JDOMUtil.load(file)
+                .getChildren("component").firstOrNull { it.getAttributeValue("name") == "RiderPerAppSettingsManager" }
+                ?.getChildren("option")?.firstOrNull { it.getAttributeValue("name") == "toolWindowsPerApp" }
+                ?.getAttributeValue("value") == "true"
+            LOG.info("toolWindowsPerApp=$enabled")
+            enabled
+        }
+        catch (e: Exception) {
+            LOG.warn("could not read RiderPerAppSettingsManager.xml, using per-project state", e)
+            false
+        }
+    }
+
+    /** Windows to restore from: the app store when sharing is on (seeded from the per-project
+     *  state the first time), the project workspace state otherwise. */
+    private fun readWindows(): List<AnchorWindowState> {
+        if (perApp) {
+            val appWindows = AnchorWindowsAppStore.getInstance().windows
+            if (appWindows.isNotEmpty()) return appWindows.toList()
+        }
+        return state.windows.toList()
+    }
+
+    private fun writeWindows(windows: MutableList<AnchorWindowState>) {
+        if (perApp) {
+            AnchorWindowsAppStore.getInstance().windows = windows
+        }
+        else {
+            state.windows = windows
+        }
+    }
+
+    /**
      * Queues [restoreAnchorWindows] behind tool window initialization, once. Called from two
      * independent triggers (the declarative ToolWindowManagerListener and the ProjectActivity)
      * because either one alone has been observed not to fire/execute in Rider.
@@ -132,8 +179,8 @@ class AnchorWindowsService(private val project: Project) : PersistentStateCompon
     fun restoreAnchorWindows() {
         if (restored) return
         restored = true
-        val savedWindows = state.windows.toList()
-        LOG.info("restoreAnchorWindows: ${savedWindows.size} saved window(s)")
+        val savedWindows = readWindows()
+        LOG.info("restoreAnchorWindows: ${savedWindows.size} saved window(s), perApp=$perApp")
         if (savedWindows.isEmpty()) return
         ensureFactoryRegistered()
 
@@ -330,7 +377,7 @@ class AnchorWindowsService(private val project: Project) : PersistentStateCompon
             }
             windows.add(windowState)
         }
-        state.windows = windows
+        writeWindows(windows)
     }
 
     /** Anchor frames have no editor to derive a title from; give them a recognizable one. */

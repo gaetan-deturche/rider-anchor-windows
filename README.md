@@ -48,6 +48,16 @@ Checked against intellij-community branch `261` (Rider 2026.1).
 - Closing an anchor window sends its docked tool windows back to the main pane (platform
   behavior in `ToolWindowManagerImpl.addToolWindowPane`'s disposable).
 
+## Layout sharing across solutions
+
+The plugin honors Rider's built-in "tool window layout per application" option
+(`RiderPerAppSettingsManager.toolWindowsPerApp`, read from the app options file at startup).
+When enabled, anchor window state lives in an application-level store (`anchorWindows.xml`)
+shared by all solutions — seeded from the per-solution state on first use. When disabled,
+state stays per solution in the workspace file. Note: each open project gets its own copy of
+the anchor windows, and the most recently saved project defines the shared layout — same
+semantics as the built-in option.
+
 ## Build
 
 ```
