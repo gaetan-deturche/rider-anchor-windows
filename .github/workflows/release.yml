@@ -1,0 +1,43 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Extracting the multi-GB Rider SDK overflows the stock runner disk without this
+      # (tool-cache + large-packages are the settings that actually free space).
+      - uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          large-packages: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Cache Gradle (incl. downloaded Rider SDK)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - run: ./gradlew --no-daemon --console=plain buildPlugin "-Dorg.gradle.java.installations.paths=$JAVA_HOME"
+
+      - name: Publish GitHub release with the plugin zip
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/distributions/*.zip
+          generate_release_notes: true
