@@ -404,9 +404,33 @@ class AnchorWindowsService(private val project: Project) : PersistentStateCompon
     fun installFocusSync() {
         for (window in groupWindows()) {
             if (focusSyncInstalled.put(window, true) == null) {
-                window.addWindowFocusListener(object : WindowAdapter() {
+                val listener = object : WindowAdapter() {
                     override fun windowGainedFocus(e: WindowEvent) = onGroupWindowFocused(e.window)
-                })
+                    override fun windowIconified(e: WindowEvent) = onGroupWindowIconified(e.window, iconified = true)
+                    override fun windowDeiconified(e: WindowEvent) = onGroupWindowIconified(e.window, iconified = false)
+                }
+                window.addWindowFocusListener(listener)
+                window.addWindowListener(listener)
+            }
+        }
+    }
+
+    /**
+     * Shares minimize/restore across the group (same toggle as focus). The per-window state
+     * checks make propagation idempotent: the events our own setExtendedState calls trigger
+     * find every other window already in the target state and stop, so no feedback loop.
+     */
+    private fun onGroupWindowIconified(source: Window, iconified: Boolean) {
+        if (!isFocusSyncEnabled()) return
+        for (window in groupWindows()) {
+            if (window === source) continue
+            val frame = window as? Frame ?: continue
+            val isIconified = frame.extendedState and Frame.ICONIFIED != 0
+            if (iconified && !isIconified) {
+                frame.extendedState = frame.extendedState or Frame.ICONIFIED
+            }
+            else if (!iconified && isIconified) {
+                frame.extendedState = frame.extendedState and Frame.ICONIFIED.inv()
             }
         }
     }

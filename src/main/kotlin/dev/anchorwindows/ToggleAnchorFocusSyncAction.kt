@@ -8,7 +8,8 @@ import com.intellij.openapi.project.DumbAware
 
 /**
  * When enabled, focusing the main frame raises the anchor windows (and vice versa) without
- * activating them, so the window group stays together in z-order across alt-tab/clicks.
+ * activating them, so the window group stays together in z-order across alt-tab/clicks;
+ * minimizing/restoring any window of the group applies to all of them as well.
  * Application-level setting (PropertiesComponent).
  */
 class ToggleAnchorFocusSyncAction : ToggleAction(), DumbAware {
