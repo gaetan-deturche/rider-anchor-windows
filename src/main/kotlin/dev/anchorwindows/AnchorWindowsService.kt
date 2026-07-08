@@ -383,7 +383,7 @@ class AnchorWindowsService(private val project: Project) : PersistentStateCompon
                     // A queued show is a not-yet-realized "visible" — don't let a snapshot
                     // taken before availability flips erase the saved intent.
                     visible = info.isVisible || toolWindowId in pendingShow
-                    weight = info.weight
+                    weight = measureWeight(toolWindowId, info.anchor) ?: info.weight
                     sideWeight = info.sideWeight
                 })
             }
@@ -474,6 +474,25 @@ class AnchorWindowsService(private val project: Project) : PersistentStateCompon
             window.toFront()
             window.isAutoRequestFocus = previous
         }
+    }
+
+    /**
+     * The platform refuses to update info.weight when a pane's center (editor) component is
+     * hidden ("Editor area is not visible, not updating tool window weights") — which is always
+     * the case in anchor windows once tools are docked, because the placeholder hides itself.
+     * So info.weight is stale for anchor tools; measure the decorator's real size instead.
+     */
+    private fun measureWeight(toolWindowId: String, anchor: ToolWindowAnchor): Float? {
+        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow(toolWindowId) as? ToolWindowEx ?: return null
+        if (!toolWindow.isVisible) return null
+        val decorator = try { toolWindow.decorator } catch (e: Exception) { return null }
+        if (!decorator.isShowing) return null
+        val rootPane = SwingUtilities.getRootPane(decorator) ?: return null
+        val horizontal = anchor == ToolWindowAnchor.TOP || anchor == ToolWindowAnchor.BOTTOM
+        val part = if (horizontal) decorator.height else decorator.width
+        val total = if (horizontal) rootPane.height else rootPane.width
+        if (part <= 0 || total <= 0) return null
+        return part.toFloat() / total
     }
 
     /** Anchor frames have no editor to derive a title from; give them a recognizable one. */
