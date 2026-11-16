@@ -46,6 +46,14 @@ jobs:
       # so IDEs with the repository URL configured see the update.
       - name: Update updatePlugins.xml on main
         run: |
+          # Re-running an old tag's workflow must not point the XML back at an old version:
+          # only the newest v* tag may regenerate it.
+          git fetch --tags origin
+          LATEST=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          if [ "$GITHUB_REF_NAME" != "$LATEST" ]; then
+            echo "not the newest tag (newest is $LATEST), leaving updatePlugins.xml untouched"
+            exit 0
+          fi
           VERSION="${GITHUB_REF_NAME#v}"
           SINCE=$(grep -oP 'pluginSinceBuild\s*=\s*\K\S+' gradle.properties)
           UNTIL=$(grep -oP 'pluginUntilBuild\s*=\s*\K\S+' gradle.properties)
@@ -68,8 +76,10 @@ jobs:
           </plugins>
           EOF
           sed -i 's/^          //' updatePlugins.xml
-          if ! git diff --quiet updatePlugins.xml; then
-            git add updatePlugins.xml
+          # Stage first, then test the index: `git diff --quiet <file>` ignores untracked
+          # files, which would silently skip the commit in a repo where CI creates the file.
+          git add updatePlugins.xml
+          if ! git diff --cached --quiet; then
             git commit -m "Point updatePlugins.xml at v${VERSION}"
             git push origin main
           fi
