@@ -22,6 +22,9 @@ dependencies {
             useInstaller = false
         }
         jetbrainsRuntime()
+        // Since 263, JNA lives in the bundled "Java Native Access (JNA)" plugin instead of the
+        // platform classpath; the focus-sync SetWindowPos call needs it.
+        bundledPlugin("com.intellij.modules.jna")
     }
 }
 
