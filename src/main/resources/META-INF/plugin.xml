@@ -20,6 +20,12 @@
         <postStartupActivity implementation="dev.anchorwindows.AnchorWindowsStartup"/>
     </extensions>
 
+    <applicationListeners>
+        <!-- Self-register the update repository + this plugin's "Updates from" source. -->
+        <listener class="dev.anchorwindows.AnchorWindowsUpdateSourceRegistrar"
+                  topic="com.intellij.ide.AppLifecycleListener"/>
+    </applicationListeners>
+
     <projectListeners>
         <!-- Primary restore trigger: fires during tool window registration at project open. -->
         <listener class="dev.anchorwindows.AnchorWindowsInitListener"
