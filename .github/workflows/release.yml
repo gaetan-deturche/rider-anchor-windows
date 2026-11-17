@@ -75,7 +75,6 @@ jobs:
             </plugin>
           </plugins>
           EOF
-          sed -i 's/^          //' updatePlugins.xml
           # Stage first, then test the index: `git diff --quiet <file>` ignores untracked
           # files, which would silently skip the commit in a repo where CI creates the file.
           git add updatePlugins.xml
